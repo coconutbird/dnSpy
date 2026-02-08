@@ -19,10 +19,17 @@
 
 namespace dnSpy.Mcp.Models;
 
+/// <summary>
+/// Information about an available decompiler.
+/// </summary>
 public sealed class DecompilerInfo {
+	/// <summary>Display name of the decompiler (e.g., "C# 12.0").</summary>
 	public string Name { get; set; } = "";
+	/// <summary>Generic name of the language (e.g., "C#", "VB", "IL").</summary>
 	public string GenericName { get; set; } = "";
+	/// <summary>File extension for decompiled output (e.g., ".cs", ".vb").</summary>
 	public string FileExtension { get; set; } = "";
+	/// <summary>True if this is the currently selected decompiler.</summary>
 	public bool IsCurrent { get; set; }
 }
 

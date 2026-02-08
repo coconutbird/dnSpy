@@ -19,7 +19,11 @@
 
 namespace dnSpy.Mcp.Models;
 
+/// <summary>
+/// Standard error response returned when an MCP tool operation fails.
+/// </summary>
 public sealed class ErrorResponse {
+	/// <summary>Human-readable error message describing what went wrong.</summary>
 	public string Error { get; set; } = "";
 }
 
