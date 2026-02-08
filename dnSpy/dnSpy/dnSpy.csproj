@@ -111,4 +111,9 @@
     <PackageReference Include="Newtonsoft.Json" Version="$(NewtonsoftJsonVersion)" />
   </ItemGroup>
 
+  <!-- ASP.NET Core framework for MCP server extension (only on .NET 10) -->
+  <ItemGroup Condition="'$(IsDotNet)' == 'true'">
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
 </Project>
