@@ -580,7 +580,7 @@ public sealed class CrossReferenceTools {
 				}
 			}
 
-			var result = new {
+			var result = new TypeDependencyResult {
 				TypeName = targetType.FullName,
 				OutgoingDependencies = outgoing.Take(maxResults).OrderBy(x => x).ToList(),
 				IncomingDependencies = incoming.Take(maxResults).OrderBy(x => x).ToList(),
@@ -630,7 +630,7 @@ public sealed class CrossReferenceTools {
 				}
 			}
 
-			var result = new {
+			var result = new AssemblyDependencyResult {
 				AssemblyName = targetDoc.AssemblyDef.FullName,
 				OutgoingDependencies = outgoing.Take(maxResults).ToList(),
 				IncomingDependencies = incoming.Take(maxResults).ToList(),

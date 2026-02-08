@@ -69,3 +69,160 @@ public sealed class TokenInfo {
 	public string? Signature { get; set; }
 }
 
+#region Metadata Tables
+
+public sealed class MetadataTableResult {
+	public string Table { get; set; } = "";
+	public string Offset { get; set; } = "";
+	public int Count { get; set; }
+	public List<object> Rows { get; set; } = new();
+}
+
+public sealed class TypeDefTableRow {
+	public int Index { get; set; }
+	public string Token { get; set; } = "";
+	public string Name { get; set; } = "";
+	public string Namespace { get; set; } = "";
+	public string Flags { get; set; } = "";
+}
+
+public sealed class MethodDefTableRow {
+	public int Index { get; set; }
+	public string Token { get; set; } = "";
+	public string Name { get; set; } = "";
+	public string RVA { get; set; } = "";
+	public string ImplFlags { get; set; } = "";
+	public string Flags { get; set; } = "";
+}
+
+public sealed class FieldTableRow {
+	public int Index { get; set; }
+	public string Token { get; set; } = "";
+	public string Name { get; set; } = "";
+	public string Flags { get; set; } = "";
+}
+
+public sealed class MemberRefTableRow {
+	public int Index { get; set; }
+	public string Token { get; set; } = "";
+	public string Name { get; set; } = "";
+	public string? Class { get; set; }
+}
+
+public sealed class TypeRefTableRow {
+	public int Index { get; set; }
+	public string Token { get; set; } = "";
+	public string Name { get; set; } = "";
+	public string Namespace { get; set; } = "";
+	public string? ResolutionScope { get; set; }
+}
+
+public sealed class AssemblyRefTableRow {
+	public int Index { get; set; }
+	public string Token { get; set; } = "";
+	public string Name { get; set; } = "";
+	public string Version { get; set; } = "";
+	public string? Culture { get; set; }
+}
+
+public sealed class CustomAttributeTableRow {
+	public int Index { get; set; }
+	public string? Parent { get; set; }
+	public string? AttributeType { get; set; }
+}
+
+#endregion
+
+#region PE Info
+
+public sealed class PEInfo {
+	public string Machine { get; set; } = "";
+	public int NumberOfSections { get; set; }
+	public string Timestamp { get; set; } = "";
+	public string Characteristics { get; set; } = "";
+	public string Magic { get; set; } = "";
+	public string Subsystem { get; set; } = "";
+	public string ImageBase { get; set; } = "";
+	public string EntryPoint { get; set; } = "";
+	public int SectionAlignment { get; set; }
+	public int FileAlignment { get; set; }
+	public List<PESectionInfo> Sections { get; set; } = new();
+}
+
+public sealed class PESectionInfo {
+	public string Name { get; set; } = "";
+	public string VirtualAddress { get; set; } = "";
+	public string VirtualSize { get; set; } = "";
+	public string RawSize { get; set; } = "";
+	public string Characteristics { get; set; } = "";
+}
+
+#endregion
+
+#region CLR Header
+
+public sealed class CLRHeaderInfo {
+	public string HeaderSize { get; set; } = "";
+	public string MajorRuntimeVersion { get; set; } = "";
+	public string MinorRuntimeVersion { get; set; } = "";
+	public string Flags { get; set; } = "";
+	public string EntryPointToken { get; set; } = "";
+	public string MetadataRVA { get; set; } = "";
+	public string MetadataSize { get; set; } = "";
+	public string ResourcesRVA { get; set; } = "";
+	public string ResourcesSize { get; set; } = "";
+}
+
+#endregion
+
+#region Type Layout
+
+public sealed class TypeLayoutInfo {
+	public string TypeName { get; set; } = "";
+	public int Size { get; set; }
+	public int PackingSize { get; set; }
+	public bool IsExplicitLayout { get; set; }
+	public List<FieldLayoutInfo> Fields { get; set; } = new();
+}
+
+public sealed class FieldLayoutInfo {
+	public string Name { get; set; } = "";
+	public string Type { get; set; } = "";
+	public int Offset { get; set; }
+	public int Size { get; set; }
+}
+
+#endregion
+
+#region VTable
+
+public sealed class VTableInfo {
+	public string TypeName { get; set; } = "";
+	public List<VTableEntry> VirtualMethods { get; set; } = new();
+	public List<InterfaceImplementationInfo> InterfaceImplementations { get; set; } = new();
+}
+
+public sealed class VTableEntry {
+	public int Slot { get; set; }
+	public string MethodName { get; set; } = "";
+	public string DeclaringType { get; set; } = "";
+	public string Signature { get; set; } = "";
+	public bool IsAbstract { get; set; }
+	public bool IsFinal { get; set; }
+	public bool IsNewSlot { get; set; }
+	public bool IsOverride { get; set; }
+	public string Token { get; set; } = "";
+}
+
+public sealed class InterfaceImplementationInfo {
+	public string InterfaceName { get; set; } = "";
+	public List<InterfaceMethodInfo> Methods { get; set; } = new();
+}
+
+public sealed class InterfaceMethodInfo {
+	public string InterfaceMethod { get; set; } = "";
+	public string? Implementation { get; set; }
+}
+
+#endregion
+

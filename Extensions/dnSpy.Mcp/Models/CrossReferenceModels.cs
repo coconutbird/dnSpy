@@ -97,3 +97,19 @@ public sealed class DependencyAnalysis {
 	public List<DependencyInfo> Outgoing { get; set; } = new();
 }
 
+public sealed class TypeDependencyResult {
+	public string TypeName { get; set; } = "";
+	public List<string> OutgoingDependencies { get; set; } = new();
+	public List<string> IncomingDependencies { get; set; } = new();
+	public int OutgoingCount { get; set; }
+	public int IncomingCount { get; set; }
+}
+
+public sealed class AssemblyDependencyResult {
+	public string AssemblyName { get; set; } = "";
+	public List<string> OutgoingDependencies { get; set; } = new();
+	public List<string> IncomingDependencies { get; set; } = new();
+	public int OutgoingCount { get; set; }
+	public int IncomingCount { get; set; }
+}
+
