@@ -129,7 +129,7 @@ public sealed class ILTools {
 		}
 
 		var info = new MethodBytesInfo {
-			RVA = method.RVA != 0 ? $"0x{method.RVA:X8}" : "N/A",
+			RVA = (uint)method.RVA != 0 ? $"0x{(uint)method.RVA:X8}" : "N/A",
 			Size = bytes.Count,
 			Bytes = BitConverter.ToString(bytes.ToArray()).Replace("-", " ")
 		};
