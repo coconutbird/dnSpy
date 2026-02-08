@@ -163,6 +163,74 @@ public sealed class DecompilerTools {
 		return JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true });
 	}
 
+	[McpServerTool, Description("Decompile a property (getter and/or setter)")]
+	public string DecompileProperty(
+		[Description("Full type name")] string typeName,
+		[Description("Property name")] string propertyName,
+		[Description("Language: csharp, vb, il (default: csharp)")] string language = "csharp") {
+		var docs = services.DocumentService.GetDocuments();
+
+		foreach (var doc in docs) {
+			if (doc.ModuleDef is null)
+				continue;
+
+			var type = doc.ModuleDef.Find(typeName, true);
+			if (type is null)
+				continue;
+
+			var property = type.Properties.FirstOrDefault(p =>
+				p.Name.String.Equals(propertyName, StringComparison.OrdinalIgnoreCase));
+
+			if (property is null)
+				return JsonSerializer.Serialize(new ErrorResponse { Error = $"Property '{propertyName}' not found in type '{typeName}'" });
+
+			var decompiler = FindDecompiler(language);
+			if (decompiler is null)
+				return JsonSerializer.Serialize(new ErrorResponse { Error = $"Language '{language}' not found" });
+
+			var results = new StringBuilder();
+
+			// Decompile property signature
+			results.AppendLine($"// Property: {property.FullName}");
+			results.AppendLine($"// Type: {property.PropertySig?.RetType?.FullName}");
+			results.AppendLine();
+
+			// Decompile getter if exists
+			if (property.GetMethod is not null) {
+				var output = new StringBuilderDecompilerOutput();
+				var ctx = new DecompilationContext();
+				decompiler.Decompile(property.GetMethod, output, ctx);
+				results.AppendLine("// --- Getter ---");
+				results.AppendLine(output.ToString());
+			}
+
+			// Decompile setter if exists
+			if (property.SetMethod is not null) {
+				var output = new StringBuilderDecompilerOutput();
+				var ctx = new DecompilationContext();
+				decompiler.Decompile(property.SetMethod, output, ctx);
+				if (property.GetMethod is not null)
+					results.AppendLine();
+				results.AppendLine("// --- Setter ---");
+				results.AppendLine(output.ToString());
+			}
+
+			// Decompile other accessors (rare but possible)
+			foreach (var other in property.OtherMethods) {
+				var output = new StringBuilderDecompilerOutput();
+				var ctx = new DecompilationContext();
+				decompiler.Decompile(other, output, ctx);
+				results.AppendLine();
+				results.AppendLine($"// --- Other accessor: {other.Name} ---");
+				results.AppendLine(output.ToString());
+			}
+
+			return results.ToString();
+		}
+
+		return JsonSerializer.Serialize(new ErrorResponse { Error = $"Type '{typeName}' not found" });
+	}
+
 	IDecompiler? FindDecompiler(string language) {
 		var lang = language.ToLowerInvariant();
 		return services.DecompilerService.AllDecompilers.FirstOrDefault(d =>

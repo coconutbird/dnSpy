@@ -315,4 +315,58 @@ public sealed class AssemblyTools {
 			return JsonSerializer.Serialize(new ErrorResponse { Error = $"Failed to save assembly: {ex.Message}" });
 		}
 	}
+
+	[McpServerTool, Description("Get detailed module-level metadata")]
+	public string GetModuleInfo(
+		[Description("Assembly name (partial match supported)")] string assemblyName,
+		[Description("Module name (optional, defaults to main module)")] string? moduleName = null) {
+		var docs = services.DocumentService.GetDocuments();
+
+		foreach (var doc in docs) {
+			if (!MatchesAssemblyName(doc, assemblyName))
+				continue;
+
+			if (doc.ModuleDef is null)
+				return JsonSerializer.Serialize(new ErrorResponse { Error = $"Assembly '{assemblyName}' has no module definition" });
+
+			ModuleDef? targetModule = null;
+
+			if (string.IsNullOrEmpty(moduleName)) {
+				// Use main module
+				targetModule = doc.ModuleDef;
+			}
+			else {
+				// Find specific module
+				if (doc.AssemblyDef is not null) {
+					targetModule = doc.AssemblyDef.Modules.FirstOrDefault(m =>
+						m.Name.String.Contains(moduleName, StringComparison.OrdinalIgnoreCase));
+				}
+				if (targetModule is null)
+					return JsonSerializer.Serialize(new ErrorResponse { Error = $"Module '{moduleName}' not found in assembly '{assemblyName}'" });
+			}
+
+			var info = new {
+				Name = targetModule.Name.String,
+				Mvid = targetModule.Mvid.ToString(),
+				Generation = targetModule.Generation,
+				RuntimeVersion = targetModule.RuntimeVersion,
+				Kind = targetModule.Kind.ToString(),
+				Characteristics = targetModule.Characteristics.ToString(),
+				Machine = targetModule.Machine.ToString(),
+				CorLibTypes = targetModule.CorLibTypes?.AssemblyRef?.FullName,
+				IsManifestModule = doc.AssemblyDef?.ManifestModule == targetModule,
+				TypeCount = targetModule.Types.Count,
+				ExportedTypeCount = targetModule.ExportedTypes.Count,
+				CustomAttributeCount = targetModule.CustomAttributes.Count,
+				HasResources = targetModule.Resources.Count > 0,
+				ResourceCount = targetModule.Resources.Count,
+				EntryPoint = targetModule.EntryPoint?.FullName,
+				Location = targetModule.Location
+			};
+
+			return JsonSerializer.Serialize(info, new JsonSerializerOptions { WriteIndented = true });
+		}
+
+		return JsonSerializer.Serialize(new ErrorResponse { Error = $"Assembly '{assemblyName}' not found" });
+	}
 }

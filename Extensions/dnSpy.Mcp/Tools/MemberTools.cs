@@ -476,4 +476,218 @@ public sealed class MemberTools {
 	}
 
 	#endregion
+
+	#region Field Attributes
+
+	[McpServerTool, Description("Get the compile-time constant value of a field")]
+	public string GetFieldConstant(
+		[Description("Full type name")] string typeName,
+		[Description("Field name")] string fieldName) {
+		var type = FindType(typeName);
+		if (type is null)
+			return JsonSerializer.Serialize(new ErrorResponse { Error = $"Type '{typeName}' not found" });
+
+		var field = type.Fields.FirstOrDefault(f =>
+			f.Name.String.Equals(fieldName, StringComparison.OrdinalIgnoreCase));
+
+		if (field is null)
+			return JsonSerializer.Serialize(new ErrorResponse { Error = $"Field '{fieldName}' not found in type '{typeName}'" });
+
+		if (!field.HasConstant)
+			return JsonSerializer.Serialize(new ErrorResponse { Error = $"Field '{fieldName}' is not a constant" });
+
+		var result = new {
+			FieldName = field.Name.String,
+			TypeName = field.FieldType?.FullName,
+			Value = field.Constant?.Value?.ToString(),
+			ValueType = field.Constant?.Type.ToString(),
+			RawValue = GetRawConstantValue(field.Constant?.Value),
+			IsLiteral = field.IsLiteral,
+			IsInitOnly = field.IsInitOnly
+		};
+
+		return JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true });
+	}
+
+	[McpServerTool, Description("List custom attributes on a field")]
+	public string ListFieldAttributes(
+		[Description("Full type name")] string typeName,
+		[Description("Field name")] string fieldName) {
+		var type = FindType(typeName);
+		if (type is null)
+			return JsonSerializer.Serialize(new ErrorResponse { Error = $"Type '{typeName}' not found" });
+
+		var field = type.Fields.FirstOrDefault(f =>
+			f.Name.String.Equals(fieldName, StringComparison.OrdinalIgnoreCase));
+
+		if (field is null)
+			return JsonSerializer.Serialize(new ErrorResponse { Error = $"Field '{fieldName}' not found in type '{typeName}'" });
+
+		var attributes = field.CustomAttributes.Select(a => new {
+			AttributeType = a.AttributeType?.FullName,
+			ConstructorArguments = a.ConstructorArguments.Select(arg => new {
+				Type = arg.Type?.FullName,
+				Value = arg.Value?.ToString()
+			}).ToList(),
+			NamedArguments = a.NamedArguments.Select(arg => new {
+				Name = arg.Name,
+				Type = arg.Type?.FullName,
+				Value = arg.Value?.ToString(),
+				IsField = arg.IsField
+			}).ToList()
+		}).ToList();
+
+		return JsonSerializer.Serialize(attributes, new JsonSerializerOptions { WriteIndented = true });
+	}
+
+	static object? GetRawConstantValue(object? value) {
+		if (value is null) return null;
+		if (value is byte[] bytes) return Convert.ToBase64String(bytes);
+		return value;
+	}
+
+	#endregion
+
+	#region Method Details
+
+	[McpServerTool, Description("Get parameter details for a method")]
+	public string ListParameters(
+		[Description("Full type name")] string typeName,
+		[Description("Method name")] string methodName,
+		[Description("Parameter signature for overload resolution (optional)")] string? signature = null) {
+		var type = FindType(typeName);
+		if (type is null)
+			return JsonSerializer.Serialize(new ErrorResponse { Error = $"Type '{typeName}' not found" });
+
+		var methods = type.Methods.Where(m =>
+			m.Name.String.Equals(methodName, StringComparison.OrdinalIgnoreCase)).ToList();
+
+		if (methods.Count == 0)
+			return JsonSerializer.Serialize(new ErrorResponse { Error = $"Method '{methodName}' not found in type '{typeName}'" });
+
+		// If signature provided, filter to matching overload
+		if (!string.IsNullOrEmpty(signature)) {
+			methods = methods.Where(m => MatchesSignature(m, signature)).ToList();
+			if (methods.Count == 0)
+				return JsonSerializer.Serialize(new ErrorResponse { Error = $"No overload of '{methodName}' matches signature '{signature}'" });
+		}
+
+		var results = methods.Select(method => new {
+			MethodName = method.Name.String,
+			FullSignature = method.FullName,
+			Parameters = method.Parameters.Where(p => !p.IsHiddenThisParameter).Select(p => new {
+				Name = p.Name,
+				Type = p.Type?.FullName,
+				Position = p.Index,
+				IsOptional = p.HasParamDef && p.ParamDef.IsOptional,
+				DefaultValue = p.HasParamDef && p.ParamDef.HasConstant ? p.ParamDef.Constant?.Value?.ToString() : null,
+				IsOut = p.HasParamDef && p.ParamDef.IsOut,
+				IsIn = p.HasParamDef && p.ParamDef.IsIn,
+				Attributes = p.HasParamDef ? p.ParamDef.CustomAttributes.Select(a => a.AttributeType?.FullName).ToList() : new List<string?>()
+			}).ToList()
+		}).ToList();
+
+		return JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true });
+	}
+
+	[McpServerTool, Description("Get local variable info from method body")]
+	public string ListLocalVariables(
+		[Description("Full type name")] string typeName,
+		[Description("Method name")] string methodName,
+		[Description("Parameter signature for overload resolution (optional)")] string? signature = null) {
+		var type = FindType(typeName);
+		if (type is null)
+			return JsonSerializer.Serialize(new ErrorResponse { Error = $"Type '{typeName}' not found" });
+
+		var methods = type.Methods.Where(m =>
+			m.Name.String.Equals(methodName, StringComparison.OrdinalIgnoreCase)).ToList();
+
+		if (methods.Count == 0)
+			return JsonSerializer.Serialize(new ErrorResponse { Error = $"Method '{methodName}' not found in type '{typeName}'" });
+
+		if (!string.IsNullOrEmpty(signature)) {
+			methods = methods.Where(m => MatchesSignature(m, signature)).ToList();
+			if (methods.Count == 0)
+				return JsonSerializer.Serialize(new ErrorResponse { Error = $"No overload of '{methodName}' matches signature '{signature}'" });
+		}
+
+		var results = methods.Select(method => {
+			var body = method.Body;
+			if (body is null)
+				return new { MethodName = method.Name.String, HasBody = false, Locals = new List<object>() };
+
+			return new {
+				MethodName = method.Name.String,
+				HasBody = true,
+				Locals = body.Variables.Select(v => (object)new {
+					Index = v.Index,
+					Type = v.Type?.FullName,
+					Name = v.Name ?? $"V_{v.Index}",
+					IsPinned = v.Type is PinnedSig
+				}).ToList()
+			};
+		}).ToList();
+
+		return JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true });
+	}
+
+	[McpServerTool, Description("List custom attributes on a method")]
+	public string ListMethodAttributes(
+		[Description("Full type name")] string typeName,
+		[Description("Method name")] string methodName,
+		[Description("Parameter signature for overload resolution (optional)")] string? signature = null) {
+		var type = FindType(typeName);
+		if (type is null)
+			return JsonSerializer.Serialize(new ErrorResponse { Error = $"Type '{typeName}' not found" });
+
+		var methods = type.Methods.Where(m =>
+			m.Name.String.Equals(methodName, StringComparison.OrdinalIgnoreCase)).ToList();
+
+		if (methods.Count == 0)
+			return JsonSerializer.Serialize(new ErrorResponse { Error = $"Method '{methodName}' not found in type '{typeName}'" });
+
+		if (!string.IsNullOrEmpty(signature)) {
+			methods = methods.Where(m => MatchesSignature(m, signature)).ToList();
+			if (methods.Count == 0)
+				return JsonSerializer.Serialize(new ErrorResponse { Error = $"No overload of '{methodName}' matches signature '{signature}'" });
+		}
+
+		var results = methods.Select(method => new {
+			MethodName = method.Name.String,
+			FullSignature = method.FullName,
+			Attributes = method.CustomAttributes.Select(a => new {
+				AttributeType = a.AttributeType?.FullName,
+				ConstructorArguments = a.ConstructorArguments.Select(arg => new {
+					Type = arg.Type?.FullName,
+					Value = arg.Value?.ToString()
+				}).ToList(),
+				NamedArguments = a.NamedArguments.Select(arg => new {
+					Name = arg.Name,
+					Type = arg.Type?.FullName,
+					Value = arg.Value?.ToString(),
+					IsField = arg.IsField
+				}).ToList()
+			}).ToList()
+		}).ToList();
+
+		return JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true });
+	}
+
+	static bool MatchesSignature(MethodDef method, string signature) {
+		// Simple signature matching - compare parameter types
+		var paramTypes = method.Parameters.Where(p => !p.IsHiddenThisParameter)
+			.Select(p => p.Type?.FullName ?? "").ToList();
+		var sigParts = signature.Replace("(", "").Replace(")", "").Split(',')
+			.Select(s => s.Trim()).Where(s => !string.IsNullOrEmpty(s)).ToList();
+
+		if (paramTypes.Count != sigParts.Count) return false;
+
+		for (int i = 0; i < paramTypes.Count; i++) {
+			if (!paramTypes[i].Contains(sigParts[i], StringComparison.OrdinalIgnoreCase))
+				return false;
+		}
+		return true;
+	}
+
+	#endregion
 }

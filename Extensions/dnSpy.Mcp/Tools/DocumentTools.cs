@@ -206,5 +206,135 @@ public sealed class DocumentTools {
 		if (type.IsDelegate) return "delegate";
 		return "class";
 	}
+
+	[McpServerTool, Description("List types nested within a type")]
+	public string ListNestedTypes(
+		[Description("Full type name")] string typeName,
+		[Description("Include private nested types (default: true)")] bool includePrivate = true,
+		[Description("Recurse into nested types (default: false)")] bool recursive = false) {
+		var docs = services.DocumentService.GetDocuments();
+
+		foreach (var doc in docs) {
+			if (doc.ModuleDef is null)
+				continue;
+
+			var type = doc.ModuleDef.Find(typeName, true);
+			if (type is null)
+				continue;
+
+			var results = new List<object>();
+			CollectNestedTypes(type, results, includePrivate, recursive, 0);
+
+			return JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true });
+		}
+
+		return JsonSerializer.Serialize(new ErrorResponse { Error = $"Type '{typeName}' not found" });
+	}
+
+	void CollectNestedTypes(TypeDef type, List<object> results, bool includePrivate, bool recursive, int depth) {
+		foreach (var nested in type.NestedTypes) {
+			if (!includePrivate && nested.IsNestedPrivate)
+				continue;
+
+			results.Add(new {
+				Name = nested.Name.String,
+				FullName = nested.FullName,
+				Kind = GetTypeKind(nested),
+				Visibility = GetNestedVisibility(nested),
+				Depth = depth,
+				IsAbstract = nested.IsAbstract,
+				IsSealed = nested.IsSealed,
+				HasNestedTypes = nested.HasNestedTypes,
+				NestedTypeCount = nested.NestedTypes.Count
+			});
+
+			if (recursive && nested.HasNestedTypes)
+				CollectNestedTypes(nested, results, includePrivate, recursive, depth + 1);
+		}
+	}
+
+	static string GetNestedVisibility(TypeDef type) {
+		if (type.IsNestedPublic) return "public";
+		if (type.IsNestedPrivate) return "private";
+		if (type.IsNestedFamily) return "protected";
+		if (type.IsNestedAssembly) return "internal";
+		if (type.IsNestedFamilyOrAssembly) return "protected internal";
+		if (type.IsNestedFamilyAndAssembly) return "private protected";
+		return "unknown";
+	}
+
+	[McpServerTool, Description("Get generic type or method parameter information")]
+	public string ListGenericParameters(
+		[Description("Full type name")] string typeName,
+		[Description("Method name (optional, for method generic parameters)")] string? methodName = null) {
+		var docs = services.DocumentService.GetDocuments();
+
+		foreach (var doc in docs) {
+			if (doc.ModuleDef is null)
+				continue;
+
+			var type = doc.ModuleDef.Find(typeName, true);
+			if (type is null)
+				continue;
+
+			if (!string.IsNullOrEmpty(methodName)) {
+				// Get method generic parameters
+				var methods = type.Methods.Where(m =>
+					m.Name.String.Equals(methodName, StringComparison.OrdinalIgnoreCase) &&
+					m.HasGenericParameters).ToList();
+
+				if (methods.Count == 0)
+					return JsonSerializer.Serialize(new ErrorResponse {
+						Error = $"No generic method '{methodName}' found in type '{typeName}'"
+					});
+
+				var results = methods.Select(m => new {
+					MethodName = m.Name.String,
+					FullName = m.FullName,
+					GenericParameters = m.GenericParameters.Select(gp => new {
+						Name = gp.Name.String,
+						Position = gp.Number,
+						Variance = GetVariance(gp),
+						HasDefaultConstructorConstraint = gp.HasDefaultConstructorConstraint,
+						HasNotNullableValueTypeConstraint = gp.HasNotNullableValueTypeConstraint,
+						HasReferenceTypeConstraint = gp.HasReferenceTypeConstraint,
+						Constraints = gp.GenericParamConstraints.Select(c => c.Constraint?.FullName).ToList()
+					}).ToList()
+				}).ToList();
+
+				return JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true });
+			}
+			else {
+				// Get type generic parameters
+				if (!type.HasGenericParameters)
+					return JsonSerializer.Serialize(new ErrorResponse {
+						Error = $"Type '{typeName}' has no generic parameters"
+					});
+
+				var result = new {
+					TypeName = type.FullName,
+					GenericParameters = type.GenericParameters.Select(gp => new {
+						Name = gp.Name.String,
+						Position = gp.Number,
+						Variance = GetVariance(gp),
+						HasDefaultConstructorConstraint = gp.HasDefaultConstructorConstraint,
+						HasNotNullableValueTypeConstraint = gp.HasNotNullableValueTypeConstraint,
+						HasReferenceTypeConstraint = gp.HasReferenceTypeConstraint,
+						Constraints = gp.GenericParamConstraints.Select(c => c.Constraint?.FullName).ToList()
+					}).ToList()
+				};
+
+				return JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true });
+			}
+		}
+
+		return JsonSerializer.Serialize(new ErrorResponse { Error = $"Type '{typeName}' not found" });
+	}
+
+	static string GetVariance(GenericParam gp) {
+		if (gp.IsCovariant) return "covariant (out)";
+		if (gp.IsContravariant) return "contravariant (in)";
+		return "invariant";
+	}
 }
 

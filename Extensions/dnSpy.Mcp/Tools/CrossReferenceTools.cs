@@ -486,5 +486,178 @@ public sealed class CrossReferenceTools {
 		if (sig is GenericInstSig gis) return gis.GenericType?.FullName;
 		return sig.FullName;
 	}
+
+	[McpServerTool, Description("Analyze dependencies of a type or assembly")]
+	public string AnalyzeDependencies(
+		[Description("Type name to analyze (optional)")] string? typeName = null,
+		[Description("Assembly name to analyze (optional)")] string? assemblyName = null,
+		[Description("Direction: incoming, outgoing, or both (default: both)")] string direction = "both",
+		[Description("Maximum results (default: 100)")] int maxResults = 100) {
+		if (string.IsNullOrEmpty(typeName) && string.IsNullOrEmpty(assemblyName))
+			return JsonSerializer.Serialize(new ErrorResponse { Error = "Either typeName or assemblyName must be provided" });
+
+		var docs = services.DocumentService.GetDocuments();
+
+		if (!string.IsNullOrEmpty(typeName)) {
+			// Analyze type dependencies
+			TypeDef? targetType = null;
+			foreach (var doc in docs) {
+				if (doc.ModuleDef is null) continue;
+				targetType = doc.ModuleDef.Find(typeName, true);
+				if (targetType is not null) break;
+			}
+
+			if (targetType is null)
+				return JsonSerializer.Serialize(new ErrorResponse { Error = $"Type '{typeName}' not found" });
+
+			var outgoing = new HashSet<string>();
+			var incoming = new HashSet<string>();
+			var includeOutgoing = direction == "outgoing" || direction == "both";
+			var includeIncoming = direction == "incoming" || direction == "both";
+
+			if (includeOutgoing) {
+				// Types this type depends on (outgoing)
+				if (targetType.BaseType is not null)
+					outgoing.Add(targetType.BaseType.FullName);
+
+				foreach (var iface in targetType.Interfaces)
+					outgoing.Add(iface.Interface.FullName);
+
+				foreach (var field in targetType.Fields) {
+					var fieldTypeName = GetTypeName(field.FieldType);
+					if (fieldTypeName is not null) outgoing.Add(fieldTypeName);
+				}
+
+				foreach (var method in targetType.Methods) {
+					if (method.ReturnType is not null) {
+						var retTypeName = GetTypeName(method.ReturnType);
+						if (retTypeName is not null) outgoing.Add(retTypeName);
+					}
+					foreach (var param in method.Parameters) {
+						var paramTypeName = GetTypeName(param.Type);
+						if (paramTypeName is not null) outgoing.Add(paramTypeName);
+					}
+					if (method.Body is not null) {
+						foreach (var local in method.Body.Variables) {
+							var localTypeName = GetTypeName(local.Type);
+							if (localTypeName is not null) outgoing.Add(localTypeName);
+						}
+					}
+				}
+
+				foreach (var prop in targetType.Properties) {
+					var propTypeName = GetTypeName(prop.PropertySig?.RetType);
+					if (propTypeName is not null) outgoing.Add(propTypeName);
+				}
+
+				// Remove self-reference and system types optionally
+				outgoing.Remove(targetType.FullName);
+			}
+
+			if (includeIncoming) {
+				// Types that depend on this type (incoming)
+				foreach (var doc in docs) {
+					if (doc.ModuleDef is null) continue;
+					foreach (var type in doc.ModuleDef.GetTypes()) {
+						if (type.FullName == targetType.FullName) continue;
+
+						if (type.BaseType?.FullName == targetType.FullName ||
+							type.Interfaces.Any(i => i.Interface.FullName == targetType.FullName)) {
+							incoming.Add(type.FullName);
+							continue;
+						}
+
+						foreach (var field in type.Fields) {
+							if (GetTypeName(field.FieldType) == targetType.FullName) {
+								incoming.Add(type.FullName);
+								break;
+							}
+						}
+
+						if (incoming.Count >= maxResults) break;
+					}
+					if (incoming.Count >= maxResults) break;
+				}
+			}
+
+			var result = new {
+				TypeName = targetType.FullName,
+				OutgoingDependencies = outgoing.Take(maxResults).OrderBy(x => x).ToList(),
+				IncomingDependencies = incoming.Take(maxResults).OrderBy(x => x).ToList(),
+				OutgoingCount = outgoing.Count,
+				IncomingCount = incoming.Count
+			};
+
+			return JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true });
+		}
+		else {
+			// Analyze assembly dependencies
+			IDsDocument? targetDoc = null;
+			foreach (var doc in docs) {
+				if (doc.AssemblyDef is null) continue;
+				if (doc.AssemblyDef.Name.String.Contains(assemblyName!, StringComparison.OrdinalIgnoreCase) ||
+					doc.GetShortName().Contains(assemblyName!, StringComparison.OrdinalIgnoreCase)) {
+					targetDoc = doc;
+					break;
+				}
+			}
+
+			if (targetDoc?.AssemblyDef is null)
+				return JsonSerializer.Serialize(new ErrorResponse { Error = $"Assembly '{assemblyName}' not found" });
+
+			var outgoing = new List<string>();
+			var incoming = new List<string>();
+			var includeOutgoing = direction == "outgoing" || direction == "both";
+			var includeIncoming = direction == "incoming" || direction == "both";
+
+			if (includeOutgoing && targetDoc.ModuleDef is not null) {
+				// Assemblies this assembly references
+				foreach (var asmRef in targetDoc.ModuleDef.GetAssemblyRefs()) {
+					outgoing.Add(asmRef.FullName);
+				}
+			}
+
+			if (includeIncoming) {
+				// Assemblies that reference this assembly
+				foreach (var doc in docs) {
+					if (doc.ModuleDef is null || doc == targetDoc) continue;
+					foreach (var asmRef in doc.ModuleDef.GetAssemblyRefs()) {
+						if (asmRef.Name.String.Equals(targetDoc.AssemblyDef.Name.String, StringComparison.OrdinalIgnoreCase)) {
+							incoming.Add(doc.AssemblyDef?.FullName ?? doc.GetShortName());
+							break;
+						}
+					}
+				}
+			}
+
+			var result = new {
+				AssemblyName = targetDoc.AssemblyDef.FullName,
+				OutgoingDependencies = outgoing.Take(maxResults).ToList(),
+				IncomingDependencies = incoming.Take(maxResults).ToList(),
+				OutgoingCount = outgoing.Count,
+				IncomingCount = incoming.Count
+			};
+
+			return JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true });
+		}
+	}
+
+	static string? GetTypeName(TypeSig? sig) {
+		if (sig is null) return null;
+		// Unwrap modifiers
+		while (sig is ModifierSig modSig)
+			sig = modSig.Next;
+		if (sig is GenericInstSig gis)
+			return gis.GenericType?.FullName;
+		if (sig is SZArraySig arr)
+			return GetTypeName(arr.Next);
+		if (sig is ArraySig arrM)
+			return GetTypeName(arrM.Next);
+		if (sig is ByRefSig byRef)
+			return GetTypeName(byRef.Next);
+		if (sig is PtrSig ptr)
+			return GetTypeName(ptr.Next);
+		return sig.FullName;
+	}
 }
 
