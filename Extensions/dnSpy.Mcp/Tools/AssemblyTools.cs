@@ -24,6 +24,8 @@ using dnlib.PE;
 using dnSpy.Contracts.Documents;
 using dnSpy.Mcp.Models;
 using ModelContextProtocol.Server;
+using File = System.IO.File;
+using Path = System.IO.Path;
 
 namespace dnSpy.Mcp.Tools;
 

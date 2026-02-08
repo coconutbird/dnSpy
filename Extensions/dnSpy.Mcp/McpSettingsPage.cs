@@ -20,6 +20,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.Composition;
+using dnSpy.Contracts.MVVM;
 using dnSpy.Contracts.Settings.Dialog;
 
 namespace dnSpy.Mcp;
@@ -36,40 +37,81 @@ sealed class McpSettingsPageProvider : IAppSettingsPageProvider {
 	}
 }
 
-sealed class McpAppSettingsPage : AppSettingsPage {
-	readonly McpSettingsImpl mcpSettings;
-	int port;
-	bool autoStart;
-
-	public override Guid ParentGuid => Guid.Empty;
-	public override Guid Guid => new Guid("E8F3A7B2-5C91-4D8E-9F3A-2D7C5E9B1A5F");
-	public override double Order => 12000; // After ORDER_BOOKMARKS (11000)
-	public override string Title => "MCP Server";
-	public override object? UIObject => this;
-
+/// <summary>
+/// ViewModel for the MCP settings page UI
+/// </summary>
+sealed class McpSettingsPageVM : ViewModelBase {
 	public int Port {
 		get => port;
 		set {
 			if (value < 1 || value > 65535)
 				value = McpSettings.DefaultPort;
-			port = value;
+			if (port != value) {
+				port = value;
+				OnPropertyChanged(nameof(Port));
+			}
 		}
 	}
 
+	int port = McpSettings.DefaultPort;
+
 	public bool AutoStart {
 		get => autoStart;
-		set => autoStart = value;
+		set {
+			if (autoStart != value) {
+				autoStart = value;
+				OnPropertyChanged(nameof(AutoStart));
+			}
+		}
 	}
 
-	public McpAppSettingsPage(McpSettingsImpl mcpSettings) {
-		this.mcpSettings = mcpSettings;
-		port = mcpSettings.Port;
-		autoStart = mcpSettings.AutoStart;
+	bool autoStart;
+
+	public McpSettingsPageVM Clone() => CopyTo(new McpSettingsPageVM());
+
+	public McpSettingsPageVM CopyTo(McpSettingsPageVM other) {
+		other.Port = Port;
+		other.AutoStart = AutoStart;
+		return other;
 	}
 
-	public override void OnApply() {
-		mcpSettings.Port = port;
-		mcpSettings.AutoStart = autoStart;
+	public void CopyFrom(McpSettings settings) {
+		Port = settings.Port;
+		AutoStart = settings.AutoStart;
+	}
+
+	public void CopyTo(McpSettings settings) {
+		settings.Port = Port;
+		settings.AutoStart = AutoStart;
 	}
 }
 
+sealed class McpAppSettingsPage : AppSettingsPage {
+	readonly McpSettingsImpl globalSettings;
+	readonly McpSettingsPageVM settings;
+
+	public override Guid ParentGuid => Guid.Empty;
+	public override Guid Guid => new Guid("E8F3A7B2-5C91-4D8E-9F3A-2D7C5E9B1A5F");
+	public override double Order => AppSettingsConstants.ORDER_MCP;
+	public override string Title => "MCP Server";
+
+	public override object? UIObject {
+		get {
+			if (uiObject is null) {
+				uiObject = new McpSettingsControl();
+				uiObject.DataContext = settings;
+			}
+			return uiObject;
+		}
+	}
+
+	McpSettingsControl? uiObject;
+
+	public McpAppSettingsPage(McpSettingsImpl mcpSettings) {
+		globalSettings = mcpSettings;
+		settings = new McpSettingsPageVM();
+		settings.CopyFrom(mcpSettings);
+	}
+
+	public override void OnApply() => settings.CopyTo(globalSettings);
+}

@@ -1,0 +1,28 @@
+<UserControl x:Class="dnSpy.Mcp.McpSettingsControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:dnSpy.Mcp">
+    <Grid Margin="5">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- Port setting -->
+        <Label Grid.Row="0" Grid.Column="0" Content="_Port:" Target="{Binding ElementName=portTextBox}" VerticalAlignment="Center" />
+        <TextBox Grid.Row="0" Grid.Column="1" x:Name="portTextBox" 
+                 Text="{Binding Port, UpdateSourceTrigger=PropertyChanged}" 
+                 Width="80" HorizontalAlignment="Left" Margin="5,5,0,5" />
+
+        <!-- Auto-start setting -->
+        <CheckBox Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" 
+                  Content="_Auto-start MCP server when dnSpy starts" 
+                  IsChecked="{Binding AutoStart}" Margin="0,5,0,5" />
+    </Grid>
+</UserControl>
+

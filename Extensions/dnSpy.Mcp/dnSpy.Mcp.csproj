@@ -12,6 +12,7 @@
     <OutputPath>..\..\dnSpy\dnSpy\bin\$(Configuration)\</OutputPath>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
 
   <!-- Reference ASP.NET Core framework for Kestrel HTTP transport (only on .NET 10) -->
