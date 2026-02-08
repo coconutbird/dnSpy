@@ -204,5 +204,115 @@ public sealed class AssemblyTools {
 		return asm.CustomAttributes.Any(a =>
 			a.AttributeType?.FullName == "System.Diagnostics.DebuggableAttribute");
 	}
-}
 
+	[McpServerTool, Description("Load an assembly from a file path")]
+	public string LoadAssembly(
+		[Description("Full path to the assembly file")] string filePath) {
+		if (!File.Exists(filePath))
+			return JsonSerializer.Serialize(new ErrorResponse { Error = $"File not found: '{filePath}'" });
+
+		try {
+			var doc = services.DocumentService.TryGetOrCreate(
+				DsDocumentInfo.CreateDocument(filePath),
+				isAutoLoaded: false);
+
+			if (doc is null)
+				return JsonSerializer.Serialize(new ErrorResponse { Error = $"Failed to load assembly from '{filePath}'" });
+
+			return JsonSerializer.Serialize(new {
+				Success = true,
+				AssemblyName = doc.AssemblyDef?.FullName ?? Path.GetFileName(filePath),
+				FilePath = doc.Filename
+			}, new JsonSerializerOptions { WriteIndented = true });
+		}
+		catch (Exception ex) {
+			return JsonSerializer.Serialize(new ErrorResponse { Error = $"Failed to load assembly: {ex.Message}" });
+		}
+	}
+
+	[McpServerTool, Description("Unload an assembly from dnSpy")]
+	public string UnloadAssembly(
+		[Description("Assembly name (partial match supported)")] string assemblyName) {
+		var doc = services.DocumentService.GetDocuments().FirstOrDefault(d => MatchesAssemblyName(d, assemblyName));
+
+		if (doc is null)
+			return JsonSerializer.Serialize(new ErrorResponse { Error = $"Assembly '{assemblyName}' not found" });
+
+		var filename = doc.Filename;
+		var asmName = doc.AssemblyDef?.FullName ?? Path.GetFileName(filename);
+
+		services.DocumentService.Remove(new[] { doc });
+
+		return JsonSerializer.Serialize(new {
+			Success = true,
+			AssemblyName = asmName,
+			Message = "Assembly unloaded successfully"
+		}, new JsonSerializerOptions { WriteIndented = true });
+	}
+
+	[McpServerTool, Description("Reload an assembly from disk")]
+	public string ReloadAssembly(
+		[Description("Assembly name (partial match supported)")] string assemblyName) {
+		var doc = services.DocumentService.GetDocuments().FirstOrDefault(d => MatchesAssemblyName(d, assemblyName));
+
+		if (doc is null)
+			return JsonSerializer.Serialize(new ErrorResponse { Error = $"Assembly '{assemblyName}' not found" });
+
+		var filename = doc.Filename;
+		if (string.IsNullOrEmpty(filename) || !File.Exists(filename))
+			return JsonSerializer.Serialize(new ErrorResponse { Error = $"Assembly file not found on disk" });
+
+		// Remove and re-add
+		services.DocumentService.Remove(new[] { doc });
+
+		try {
+			var newDoc = services.DocumentService.TryGetOrCreate(
+				DsDocumentInfo.CreateDocument(filename),
+				isAutoLoaded: false);
+
+			if (newDoc is null)
+				return JsonSerializer.Serialize(new ErrorResponse { Error = $"Failed to reload assembly" });
+
+			return JsonSerializer.Serialize(new {
+				Success = true,
+				AssemblyName = newDoc.AssemblyDef?.FullName ?? Path.GetFileName(filename),
+				FilePath = newDoc.Filename,
+				Message = "Assembly reloaded successfully"
+			}, new JsonSerializerOptions { WriteIndented = true });
+		}
+		catch (Exception ex) {
+			return JsonSerializer.Serialize(new ErrorResponse { Error = $"Failed to reload assembly: {ex.Message}" });
+		}
+	}
+
+	[McpServerTool, Description("Save an assembly to a file (if modified)")]
+	public string SaveAssembly(
+		[Description("Assembly name (partial match supported)")] string assemblyName,
+		[Description("Output file path (optional, overwrites original if omitted)")] string? outputPath = null) {
+		var doc = services.DocumentService.GetDocuments().FirstOrDefault(d => MatchesAssemblyName(d, assemblyName));
+
+		if (doc is null)
+			return JsonSerializer.Serialize(new ErrorResponse { Error = $"Assembly '{assemblyName}' not found" });
+
+		if (doc.ModuleDef is null)
+			return JsonSerializer.Serialize(new ErrorResponse { Error = $"Assembly has no module definition (may not be a .NET assembly)" });
+
+		var targetPath = outputPath ?? doc.Filename;
+		if (string.IsNullOrEmpty(targetPath))
+			return JsonSerializer.Serialize(new ErrorResponse { Error = $"No output path specified and assembly has no original path" });
+
+		try {
+			doc.ModuleDef.Write(targetPath);
+
+			return JsonSerializer.Serialize(new {
+				Success = true,
+				AssemblyName = doc.AssemblyDef?.FullName ?? Path.GetFileName(targetPath),
+				FilePath = targetPath,
+				Message = "Assembly saved successfully"
+			}, new JsonSerializerOptions { WriteIndented = true });
+		}
+		catch (Exception ex) {
+			return JsonSerializer.Serialize(new ErrorResponse { Error = $"Failed to save assembly: {ex.Message}" });
+		}
+	}
+}
